@@ -6,14 +6,10 @@
 
 package project2;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.PriorityQueue;
-
 import project2.Relation.RelationLoader;
 import project2.Relation.RelationWriter;
+
+import java.util.*;
 
 public class Algorithms {
 	
@@ -185,7 +181,7 @@ public class Algorithms {
 		int numIO=0;
 		
 		int M = Setting.memorySize;
-		if(M<Math.min(relR.getNumBlocks() / M, relS.getNumBlocks() / M)){
+		if(M-1<Math.min(relR.getNumBlocks() / M, relS.getNumBlocks() / M)){
 			System.out.printf("The memory size (%d) is too small \n",M);
 			return -1; //return a negative value indicating e
 		}
