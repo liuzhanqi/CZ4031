@@ -465,12 +465,12 @@ public class Algorithms {
 	public static void main(String[] arg){
 		//Algorithms.examples();
 		//Populate relations
-//		Relation relR=new Relation("RelR");
-//		int numTuples=relR.populateRelationFromFile("RelR.txt");
-//		System.out.println("Relation RelR contains "+numTuples+" tuples.");
-//		int numIO = mergeSortRelation(relR);
-//		System.out.println("---------numIO----------");
-//		System.out.println(numIO);
+		Relation relR=new Relation("RelR");
+		int numTuples=relR.populateRelationFromFile("RelR.txt");
+		System.out.println("Relation RelR contains "+numTuples+" tuples.");
+		int numIO = mergeSortRelation(relR);
+		System.out.println("---------numIO----------");
+		System.out.println(numIO);
 
 		//Yichang
 		Algorithms.testCases();
