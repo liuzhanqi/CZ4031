@@ -19,6 +19,8 @@ import java.util.PriorityQueue;
 import project2.Relation.RelationLoader;
 import project2.Relation.RelationWriter;
 
+import java.util.*;
+
 public class Algorithms {
 	
 	private static Block[] sortSubLists(Block[] blockList) {
@@ -185,11 +187,11 @@ public class Algorithms {
 	 * @param relRS is the result relation of the join
 	 * @return the number of IO cost (in terms of reading and writing blocks)
 	 */
-	public int hashJoinRelations(Relation relR, Relation relS, Relation relRS){
+	public static int hashJoinRelations(Relation relR, Relation relS, Relation relRS){
 		int numIO=0;
 		
 		int M = Setting.memorySize;
-		if(M<2){
+		if(M-1<Math.min(relR.getNumBlocks() / M, relS.getNumBlocks() / M)){
 			System.out.printf("The memory size (%d) is too small \n",M);
 			return -1; //return a negative value indicating e
 		}
@@ -742,7 +744,7 @@ public class Algorithms {
 	public static void testCases(){
 	
 		//Setting.blockFactor =10;
-        //Setting.memorySize =20;
+        //Setting.memorySize =5;
         Relation relR=new Relation("RelR");
         relR.populateRelationFromFile("RelR.txt");
 
@@ -751,9 +753,8 @@ public class Algorithms {
 
         Relation relRS=new Relation("RelRS");
 
-//        int numIOHash = Algorithms.hashJoinRelations(relR,relS,relRS);
-
-        System.out.printf("----------Hash Join---------");
+        System.out.printf("----------Hash Join---------\n");
+		int numIOHash = Algorithms.hashJoinRelations(relR,relS,relRS);
         relRS.printRelation(false, false);
         relR.printRelation(false, false);
         relS.printRelation(false, false);
