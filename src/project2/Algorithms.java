@@ -10,20 +10,46 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.PriorityQueue;
 
 import project2.Relation.RelationLoader;
 import project2.Relation.RelationWriter;
 
-import java.util.*;
-
 public class Algorithms {
+	protected class TupleItem {
+		Tuple tuple;
+		int index;
+		Block block;
+
+		public TupleItem(Tuple t, int i, Block b) {
+			this.tuple=t; this.index=i; this.block=b;
+		}
+	}
 	
-	private static Block[] sortSubLists(Block[] blockList) {
+	/*insert the next available tuple of corresponding sorted sublist into priority queue*/
+	private int insertTupleItem(TupleItem currentTupleItem, HashMap<Block,RelationLoader> inputBuffers,PriorityQueue<TupleItem> tupleQueue) {
+		int numIO = 0;
+		
+		//check if this is the last tuple in the block
+		if (currentTupleItem.index == currentTupleItem.block.getNumTuples() - 1) {
+			//load the next available block into input buffer and insert its first tuple into PQ
+			RelationLoader loader = inputBuffers.get(currentTupleItem.block);
+			if (loader.hasNextBlock()) {
+				Block newBlock = loader.loadNextBlocks(1)[0];
+				numIO += 1;
+				inputBuffers.put(newBlock, loader);
+				tupleQueue.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
+			}
+		} else { //insert the subsequent tuple into PQ
+			Tuple newTuple = currentTupleItem.block.tupleLst.get(currentTupleItem.index + 1);
+			tupleQueue.add(new TupleItem(newTuple, currentTupleItem.index + 1, currentTupleItem.block));
+		}
+		
+		return numIO;
+	}
+	
+	private Block[] sortSubLists(Block[] blockList) {
 		ArrayList<Tuple> tupleList = new ArrayList<>();
 		int blockListActualSize = 0;
 		for (Block b : blockList) {
@@ -33,6 +59,7 @@ public class Algorithms {
 				tupleList.add(t);
 			}
 		}
+		
 		Collections.sort(tupleList, new Comparator<Tuple>() {
 			public int compare(Tuple t1, Tuple t2) {
 				return t1.key - t2.key;
@@ -61,7 +88,7 @@ public class Algorithms {
 	 * @return the number of IO cost (in terms of reading and writing blocks)
 	 * @throws Exception 
 	 */
-	public static int mergeSortRelation(Relation rel){
+	public int mergeSortRelation(Relation rel){
 		int numIO=0;
 		
 		int M = Setting.memorySize;
@@ -83,11 +110,11 @@ public class Algorithms {
 		numIO += rel.getNumBlocks();
 		while (relLoader.hasNextBlock()) {
 			Relation sortedSublist = new Relation("sortedSublists");
-			RelationWriter sortedSublistsWriter = sortedSublist.getRelationWriter();
+			RelationWriter sortedSublistWriter = sortedSublist.getRelationWriter();
 			Block[] blocklist = relLoader.loadNextBlocks(M);
 			blocklist = sortSubLists(blocklist);
 			for (Block b : blocklist) {
-				sortedSublistsWriter.writeBlock(b);
+				sortedSublistWriter.writeBlock(b);
 				numIO += 1;
 			}
 			boolean added = sortedSublists.add(sortedSublist);
@@ -115,16 +142,6 @@ public class Algorithms {
 		
 		//merge blocks in input buffer to outRel
 		//use a priority queue to get the smallest tuple each time
-		final class TupleItem {
-			Tuple tuple;
-			int index;
-			Block block;
-
-			public TupleItem(Tuple t, int i, Block b) {
-				this.tuple=t; this.index=i; this.block=b;
-			}
-		}
-
 		PriorityQueue<TupleItem> tupleQueue = new PriorityQueue<TupleItem>(
 			new Comparator<TupleItem>() {
 				public int compare (TupleItem t1, TupleItem t2) {
@@ -147,21 +164,7 @@ public class Algorithms {
 			//get the smallest tuple in priority queue and insert it to output buffer
 			TupleItem tupleItem = tupleQueue.poll();
 			outputBuffer.insertTuple(tupleItem.tuple);
-			//insert the next tuple into priority queue
-			//check if this is the last tuple in the block
-			if (tupleItem.index == tupleItem.block.getNumTuples() - 1) {
-				//load a new block into input buffer
-				RelationLoader loader = inputBuffers.get(tupleItem.block);
-				if (loader.hasNextBlock()) {
-					Block newBlock = loader.loadNextBlocks(1)[0];
-					numIO += 1;
-					inputBuffers.put(newBlock, loader);
-					tupleQueue.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-				}
-			} else { //this is not the last tuple in the block
-				Tuple newTuple = tupleItem.block.tupleLst.get(tupleItem.index + 1);
-				tupleQueue.add(new TupleItem(newTuple, tupleItem.index + 1, tupleItem.block));
-			}
+			numIO += insertTupleItem(tupleItem, inputBuffers, tupleQueue);
 
 			//check if output buffer is full
 			if (outputBuffer.getNumTuples() == F) {
@@ -377,39 +380,30 @@ public class Algorithms {
 	 * @return the number of IO cost (in terms of reading and writing blocks)
 	 */
 	
-	public static int refinedSortMergeJoinRelations(Relation relR, Relation relS, Relation relRS){
+	public int refinedSortMergeJoinRelations(Relation relR, Relation relS, Relation relRS){
 		int numIO=0;
 		
 		int M = Setting.memorySize;
 		int F = Setting.blockFactor;
 		
-		if (M < 1) {
+		//check memory requirement to perform 2PMMS on R and S
+		if ((Math.ceil(relR.getNumBlocks()/M) + Math.ceil(relS.getNumBlocks()/M)) > M-1) {
 			System.out.println("Memory size is too small");
-			return -1;
+            return -1;
 		}
 		
-		final class InMemoryArrayList<T> extends ArrayList<T> {
-			  @Override
-			  public boolean add(T e) {
-			      if (this.size() < Setting.memorySize) {
-			          return super.add(e);
-			      }
-			      return false;
-			  }
-			}
-		
-		//Phase 1: Produce sorted sublist of R and S
-		//R
+		/*Phase 1: Produce sorted sublists R and S*/
+		//sorted sublists R
 		RelationLoader relLoaderR = relR.getRelationLoader();
-		InMemoryArrayList<Relation> sortedSublistsR = new InMemoryArrayList<>();
+		ArrayList<Relation> sortedSublistsR = new ArrayList<>();
 		numIO += relR.getNumBlocks();
 		while (relLoaderR.hasNextBlock()) {
 			Relation sortedSublistR = new Relation("sortedSublistR");
-			RelationWriter sortedSublistsWriterR = sortedSublistR.getRelationWriter();
+			RelationWriter sortedSublistWriterR = sortedSublistR.getRelationWriter();
 			Block[] blocklist = relLoaderR.loadNextBlocks(M);
 			blocklist = sortSubLists(blocklist);
 			for (Block b : blocklist) {
-				sortedSublistsWriterR.writeBlock(b);
+				sortedSublistWriterR.writeBlock(b);
 				numIO += 1;
 			}
 			boolean added = sortedSublistsR.add(sortedSublistR);
@@ -419,17 +413,17 @@ public class Algorithms {
 			}
 		}
 		
-		//S
+		//sorted sublists S
 		RelationLoader relLoaderS = relS.getRelationLoader();
-		InMemoryArrayList<Relation> sortedSublistsS = new InMemoryArrayList<>();
+		ArrayList<Relation> sortedSublistsS = new ArrayList<>();
 		numIO += relS.getNumBlocks();
 		while (relLoaderS.hasNextBlock()) {
 			Relation sortedSublistS = new Relation("sortedSublistS");
-			RelationWriter sortedSublistsWriterS = sortedSublistS.getRelationWriter();
+			RelationWriter sortedSublistWriterS = sortedSublistS.getRelationWriter();
 			Block[] blocklist = relLoaderS.loadNextBlocks(M);
 			blocklist = sortSubLists(blocklist);
 			for (Block b : blocklist) {
-				sortedSublistsWriterS.writeBlock(b);
+				sortedSublistWriterS.writeBlock(b);
 				numIO += 1;
 			}
 			boolean added = sortedSublistsS.add(sortedSublistS);
@@ -439,20 +433,15 @@ public class Algorithms {
 			}
 		}
 		
-		int numOfSublistsR = sortedSublistsR.size();
-		int numOfSublistsS = sortedSublistsS.size();
+		/*Phase 2: Merge and join sorted sublists R and S*/	
+		//initialize input buffers and output buffer
+		//pair the relation loader with block so that it is easier to get the next block
+		HashMap<Block,RelationLoader> inputBuffersR = new HashMap<>();
+		HashMap<Block,RelationLoader> inputBuffersS = new HashMap<>();
+		Block outputBuffer = new Block();
+		RelationWriter outWriter = relRS.getRelationWriter();
 		
-		if (numOfSublistsR + numOfSublistsS > M-1) {
-            System.out.println("Error: Number of Sublists exceeds M-1");
-            return -1;
-		}
-		
-		//Phase 2: Merge and join sorted sublists
-		//Pair the relation loader with block so that it is easier to get the next block
-		LinkedHashMap<Block,RelationLoader> inputBuffersR = new LinkedHashMap<>();
-		LinkedHashMap<Block,RelationLoader> inputBuffersS = new LinkedHashMap<>();
-		
-		//load the first block of each sorted sublists into the input buffers
+		//load the first block of each sorted sublists into the input buffers R and S
 		for (Relation list : sortedSublistsR) {
 			RelationLoader listLoader = list.getRelationLoader();
 			Block[] blocks = listLoader.loadNextBlocks(1);
@@ -467,18 +456,7 @@ public class Algorithms {
 			inputBuffersS.put(blocks[0],listLoader);
 		}
 		
-		//merge blocks in input buffer to outRel
 		//use a priority queue to get the smallest tuple each time
-		final class TupleItem {
-			Tuple tuple;
-			int index;
-			Block block;
-
-			public TupleItem(Tuple t, int i, Block b) {
-				this.tuple=t; this.index=i; this.block=b;
-			}
-		}
-
 		PriorityQueue<TupleItem> tupleQueueR = new PriorityQueue<TupleItem>(
 			new Comparator<TupleItem>() {
 				public int compare (TupleItem t1, TupleItem t2) {
@@ -494,7 +472,7 @@ public class Algorithms {
 				});
 
 		
-		//add the first tuples of each block in input buffer to the priority queue
+		//add the first tuples of each block in input buffer to the priority queue R and S
 		for (Block block: inputBuffersR.keySet()) {
 			Tuple tuple = block.tupleLst.get(0);
 			TupleItem tupleItem = new TupleItem(tuple, 0, block);
@@ -507,71 +485,42 @@ public class Algorithms {
 			tupleQueueS.add(tupleItem);
 		}
 
-		Block outputBuffer = new Block();
-		RelationWriter outWriter = relRS.getRelationWriter();
-
 		TupleItem checkItemR;
 		TupleItem checkItemS;
 		TupleItem tupleItemR;
 		TupleItem tupleItemS;
 		
-		while (true) {
-			//get the smallest tuple in priority queue and insert it to output buffer
+		//join operation will terminate if one of the relation is finished
+		while (!tupleQueueR.isEmpty() && !tupleQueueS.isEmpty()) {
+			//check the smallest tuple in priority queue R and S
 			checkItemR = tupleQueueR.peek();
 			checkItemS = tupleQueueS.peek();
 			
-			if (checkItemR == null || checkItemS == null)
-				break;
-			
+			//check if smallest tuples in R and S have the same integer key
 			if (checkItemR.tuple.key == checkItemS.tuple.key) {
 				List<Tuple> joinListR = new ArrayList<Tuple>();
 				List<Tuple> joinListS = new ArrayList<Tuple>();
 				int smallestKey = checkItemR.tuple.key;
 				
+				//identify all tuples in R with same key
 				while (tupleQueueR.peek().tuple.key == smallestKey) {			
 					tupleItemR = tupleQueueR.poll();
+					numIO += insertTupleItem(tupleItemR, inputBuffersR, tupleQueueR);
 					joinListR.add(tupleItemR.tuple);
-			
-					//R: Insert the next tuple into priority queue and check if this is the last tuple in the block
-					if (tupleItemR.index == tupleItemR.block.getNumTuples() - 1) {
-						RelationLoader loader = inputBuffersR.get(tupleItemR.block);
-						if (loader.hasNextBlock()) {
-							Block newBlock = loader.loadNextBlocks(1)[0];
-							numIO += 1;
-							inputBuffersR.put(newBlock, loader);
-							tupleQueueR.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-						}
-					} else {
-						Tuple newTuple = tupleItemR.block.tupleLst.get(tupleItemR.index + 1);
-						tupleQueueR.add(new TupleItem(newTuple, tupleItemR.index + 1, tupleItemR.block));
-					}
-					//
 					
 					if (tupleQueueR.isEmpty()) break;
 				}
 				
+				//identify all tuples in S with same key
 				while (tupleQueueS.peek().tuple.key == checkItemR.tuple.key) {	
 					tupleItemS = tupleQueueS.poll();
+					numIO += insertTupleItem(tupleItemS, inputBuffersS, tupleQueueS);
 					joinListS.add(tupleItemS.tuple);
-					
-					//S: Insert the next tuple into priority queue and check if this is the last tuple in the block
-					if (tupleItemS.index == tupleItemS.block.getNumTuples() - 1) {
-						RelationLoader loader = inputBuffersS.get(tupleItemS.block);
-						if (loader.hasNextBlock()) {
-							Block newBlock = loader.loadNextBlocks(1)[0];
-							numIO += 1;
-							inputBuffersS.put(newBlock, loader);
-							tupleQueueS.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-						}
-					} else {
-						Tuple newTuple = tupleItemS.block.tupleLst.get(tupleItemS.index + 1);
-						tupleQueueS.add(new TupleItem(newTuple, tupleItemS.index + 1, tupleItemS.block));
-					}
-					//
 					
 					if (tupleQueueS.isEmpty()) break;
 				}
 				
+				//cross join all the common tuples in R and S
 	            for (int i = 0; i < joinListR.size(); i++) {
 	                for (int j = 0; j < joinListS.size(); j++) {
 	                	JointTuple tuple = new JointTuple(joinListR.get(i), joinListS.get(j));	
@@ -584,98 +533,28 @@ public class Algorithms {
 	            }
 			}
 			else {
-				if (checkItemR.tuple.key < checkItemS.tuple.key) {
+				//discard all the tuples in R that have smaller key than smallest tuple key in S
+				while (tupleQueueR.peek().tuple.key < checkItemS.tuple.key) {
 					tupleItemR = tupleQueueR.poll();
-					//R: Insert the next tuple into priority queue and check if this is the last tuple in the block
-					if (tupleItemR.index == tupleItemR.block.getNumTuples() - 1) {
-						RelationLoader loader = inputBuffersR.get(tupleItemR.block);
-						if (loader.hasNextBlock()) {
-							Block newBlock = loader.loadNextBlocks(1)[0];
-							numIO += 1;
-							inputBuffersR.put(newBlock, loader);
-							tupleQueueR.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-						}
-					} else {
-						Tuple newTuple = tupleItemR.block.tupleLst.get(tupleItemR.index + 1);
-						tupleQueueR.add(new TupleItem(newTuple, tupleItemR.index + 1, tupleItemR.block));
-					}
-					//
-					
-					while (true) {
-						checkItemR = tupleQueueR.peek();
-						if (checkItemR.tuple.key >= checkItemS.tuple.key || checkItemR == null)
-							break;
-						
-						tupleItemR = tupleQueueR.poll();
-						//R: Insert the next tuple into priority queue and check if this is the last tuple in the block
-						if (tupleItemR.index == tupleItemR.block.getNumTuples() - 1) {
-							RelationLoader loader = inputBuffersR.get(tupleItemR.block);
-							if (loader.hasNextBlock()) {
-								Block newBlock = loader.loadNextBlocks(1)[0];
-								numIO += 1;
-								inputBuffersR.put(newBlock, loader);
-								tupleQueueR.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-							}
-						} else {
-							Tuple newTuple = tupleItemR.block.tupleLst.get(tupleItemR.index + 1);
-							tupleQueueR.add(new TupleItem(newTuple, tupleItemR.index + 1, tupleItemR.block));
-						}
-						//	
-					}
+					numIO += insertTupleItem(tupleItemR, inputBuffersR, tupleQueueR);
 				}
-				else {
+				
+				//discard all the tuples in S that have smaller key than smallest tuple key in R
+				while (tupleQueueS.peek().tuple.key < checkItemR.tuple.key) {
 					tupleItemS = tupleQueueS.poll();
-					//S: Insert the next tuple into priority queue and check if this is the last tuple in the block
-					if (tupleItemS.index == tupleItemS.block.getNumTuples() - 1) {
-						RelationLoader loader = inputBuffersS.get(tupleItemS.block);
-						if (loader.hasNextBlock()) {
-							Block newBlock = loader.loadNextBlocks(1)[0];
-							numIO += 1;
-							inputBuffersS.put(newBlock, loader);
-							tupleQueueS.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-						}
-					} else {
-						Tuple newTuple = tupleItemS.block.tupleLst.get(tupleItemS.index + 1);
-						tupleQueueS.add(new TupleItem(newTuple, tupleItemS.index + 1, tupleItemS.block));
-					}
-					//
-					
-					while (true) {
-						checkItemS = tupleQueueS.peek();
-						if (checkItemS.tuple.key >= checkItemR.tuple.key || checkItemS == null)
-							break;
-						
-						tupleItemS = tupleQueueS.poll();			
-						//S: Insert the next tuple into priority queue and check if this is the last tuple in the block
-						if (tupleItemS.index == tupleItemS.block.getNumTuples() - 1) {
-							RelationLoader loader = inputBuffersS.get(tupleItemS.block);
-							if (loader.hasNextBlock()) {
-								Block newBlock = loader.loadNextBlocks(1)[0];
-								numIO += 1;
-								inputBuffersS.put(newBlock, loader);
-								tupleQueueS.add(new TupleItem(newBlock.tupleLst.get(0), 0, newBlock));
-							}
-						} else {
-							Tuple newTuple = tupleItemS.block.tupleLst.get(tupleItemS.index + 1);
-							tupleQueueS.add(new TupleItem(newTuple, tupleItemS.index + 1, tupleItemS.block));
-						}
-						//
-					}
+					numIO += insertTupleItem(tupleItemS, inputBuffersS, tupleQueueS);
 				}
-			}
-
-			//check if output buffer is full
-			if (outputBuffer.getNumTuples() == F) {
-				//write the output buffer in outRel
-				outWriter.writeBlock(outputBuffer);
-				outputBuffer = new Block();
 			}
 		}
 		
-		//write to remaining blocks in output buffer to outrel
+		//write to remaining blocks in output buffer to relRS
 		outWriter.writeBlock(outputBuffer);
 		
-		//System.out.println("---------Printing relations----------");
+		//print number of IO
+		System.out.println("Number of IO: " + numIO);
+		
+		//print relation RS (join result)
+		System.out.println("------Printing relation RS------");
 		relRS.printRelation(true, true);
 		
 		return numIO;
@@ -742,23 +621,29 @@ public class Algorithms {
 	 * Testing cases. 
 	 */
 	public static void testCases(){
-	
-		//Setting.blockFactor =10;
-        //Setting.memorySize =5;
-        Relation relR=new Relation("RelR");
-        relR.populateRelationFromFile("RelR.txt");
-
-        Relation relS=new Relation("RelS");
-        relS.populateRelationFromFile("RelS.txt");
-
-        Relation relRS=new Relation("RelRS");
-
-        System.out.printf("----------Hash Join---------\n");
+		Algorithms algo = new Algorithms();
+		int numIO;
+		Relation relR = new Relation("RelR");
+		int numTuplesR = relR.populateRelationFromFile("RelR.txt");
+		System.out.println("Relation RelR contains "+numTuplesR+" tuples.");
+		
+		Relation relS = new Relation("RelS");
+		int numTuplesS = relS.populateRelationFromFile("RelS.txt");
+		System.out.println("Relation RelS contains "+numTuplesS+" tuples.");
+		
+		Relation relRS = new Relation("RelRS");
+		
+		/*Test Refined Sort-Merge Join*/
+		System.out.println("--------Test Refined Sort-Merge Join--------");
+		numIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		
+		//Yi Chang
+/*      System.out.printf("----------Hash Join---------\n");
 		int numIOHash = Algorithms.hashJoinRelations(relR,relS,relRS);
         relRS.printRelation(false, false);
         relR.printRelation(false, false);
         relS.printRelation(false, false);
-//        System.out.printf("Number of IO: %d",numIOHash);
+        System.out.printf("Number of IO: %d",numIOHash);*/
 	
 	}
 	
@@ -767,21 +652,6 @@ public class Algorithms {
 	 * @param arg
 	 */
 	public static void main(String[] arg){
-		//Algorithms.examples();
-		//Populate relations
-		Relation relR=new Relation("RelR");
-		int numTuplesR=relR.populateRelationFromFile("RelR.txt");
-		System.out.println("Relation RelR contains "+numTuplesR+" tuples.");
-		Relation relS=new Relation("RelS");
-		int numTuplesS=relS.populateRelationFromFile("RelS.txt");
-		System.out.println("Relation RelR contains "+numTuplesS+" tuples.");
-		Relation relRS=new Relation("RelRS");
-		
-		int numIO = refinedSortMergeJoinRelations(relR, relS, relRS);
-		System.out.println("---------numIO----------");
-		System.out.println(numIO);
-
-		//Yichang
-//		Algorithms.testCases();
+		Algorithms.testCases();
 	}
 }
