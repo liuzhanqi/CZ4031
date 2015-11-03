@@ -622,7 +622,6 @@ public class Algorithms {
 	 */
 	public static void testCases(){
 		Algorithms algo = new Algorithms();
-		int numIO;
 		Relation relR = new Relation("RelR");
 		int numTuplesR = relR.populateRelationFromFile("RelR.txt");
 		System.out.println("Relation RelR contains "+numTuplesR+" tuples.");
@@ -633,10 +632,13 @@ public class Algorithms {
 		
 		Relation relRS = new Relation("RelRS");
 		
-		/*Test Refined Sort-Merge Join*/
-		System.out.println("--------Test Refined Sort-Merge Join--------");
-		numIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		/*Test Merge Sort*/
 		
+		/*Test Refined Sort-Merge Join*/
+		System.out.println("--------Refined Sort-Merge Join--------");
+		algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		
+		/*Test Hash Join*/
 		//Yi Chang
 /*      System.out.printf("----------Hash Join---------\n");
 		int numIOHash = Algorithms.hashJoinRelations(relR,relS,relRS);
@@ -644,7 +646,6 @@ public class Algorithms {
         relR.printRelation(false, false);
         relS.printRelation(false, false);
         System.out.printf("Number of IO: %d",numIOHash);*/
-	
 	}
 	
 	/**
