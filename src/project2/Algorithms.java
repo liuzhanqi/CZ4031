@@ -190,9 +190,9 @@ public class Algorithms {
 	 * @param relRS is the result relation of the join
 	 * @return the number of IO cost (in terms of reading and writing blocks)
 	 */
-	public static int hashJoinRelations(Relation relR, Relation relS, Relation relRS){
+	public int hashJoinRelations(Relation relR, Relation relS, Relation relRS){
 		int numIO=0;
-		
+
 		int M = Setting.memorySize;
 		if(M-1<Math.min(relR.getNumBlocks() / M, relS.getNumBlocks() / M)){
 			System.out.printf("The memory size (%d) is too small \n",M);
@@ -213,13 +213,13 @@ public class Algorithms {
 		RelationLoader R = relR.getRelationLoader();
 
         //initiate bucket storing R
-        ArrayList<ArrayList<Block>> bucketR = new ArrayList<ArrayList<Block>>();
-        for(int i=0;i<M-1;i++){
-            bucketR.add(new ArrayList<Block>());
-        }
+        ArrayList<ArrayList<Block>> bucketsR = new ArrayList<ArrayList<Block>>();
+		for(int i=0;i<M-1;i++){
+			bucketsR.add(new ArrayList<Block>());
+		}
 
         //blockInBucketR an array of integer tracking number of blocks in each bucket storing R
-        int[] blockInBucketR = new int[M-1];
+        int[] blockCountR = new int[M-1];
 
 
 		//Load R
@@ -229,44 +229,43 @@ public class Algorithms {
 			for(Tuple tR: inputBuffer.tupleLst){
 				int h = tR.key%(M-1);
 
-				//add to buckets if the output buffer is full
+				//check if output buffer is full
 				if(outBuffer.get(h).getNumTuples()==Setting.blockFactor){
 
-					//check number of tuples in buffer
-					if(blockInBucketR[h]<(M-1)){
-						//copy the buffer to disk
-						bucketR.get(h).add(blockInBucketR[h], outBuffer.get(h));
+					//check number of blocks in bucket[h]
+					if(blockCountR[h]<(M-1)){
+						//copy the buffer to bucket[h] (disk)
+						bucketsR.get(h).add(blockCountR[h], outBuffer.get(h));
 						numIO++;
-                        blockInBucketR[h]++;
+						blockCountR[h]++;
 						//initial a new empty buffer
                         outBuffer.set(h, new Block());
-						outBuffer.get(h).insertTuple(tR);
-
 					} else {
 						System.out.printf("Relation R has exceeded memory size!");
 						return -1;
 					}
-				}else{
-					outBuffer.get(h).insertTuple(tR);
 				}
+				outBuffer.get(h).insertTuple(tR);
 			}
 		}
 
+		int blockSum = 0;
 		//load the remain part in buffer to disk
 		for(int i=0;i<(M-1);i++){
 			//if the buffer for this bucket is not empty
 			if(outBuffer.get(i).getNumTuples()!=0){
-				if(blockInBucketR[i]<(M-1)){
-					bucketR.get(i).add(blockInBucketR[i], outBuffer.get(i));
+				if(blockCountR[i]<(M-1)){
+					bucketsR.get(i).add(blockCountR[i], outBuffer.get(i));
 					numIO++;
-                    blockInBucketR[i]++;
+					blockCountR[i]++;
+					blockSum +=blockCountR[i];
 				}else{
 					System.out.printf("Relation R has exceeded memory size!");
                     return -1;
 				}
 			}
 		}
-
+		System.out.printf("Relation relR, Number of blocks after hash: %d\n",blockSum);
 
 		//Hash S -----------------------------------------------------------
 
@@ -275,13 +274,14 @@ public class Algorithms {
 		}
 		RelationLoader S = relS.getRelationLoader();
         //initiate bucket storing S
-        ArrayList<ArrayList<Block>> bucketS = new ArrayList<ArrayList<Block>>();
+        ArrayList<ArrayList<Block>> bucketsS = new ArrayList<ArrayList<Block>>();
+
         for(int i=0;i<M-1;i++){
-            bucketS.add(new ArrayList<Block>());
+            bucketsS.add(new ArrayList<Block>());
         }
 
         //blockInBucketR an array of integer tracking number of blocks in each bucket storing R
-        int[] blockInBucketS = new int[M-1];
+        int[] blockCountS = new int[M-1];
 
         //Load S
         while(S.hasNextBlock()){
@@ -291,87 +291,96 @@ public class Algorithms {
 
                 int h = tS.key%(M-1);
 
-                //add to buckets if the output buffer is full
+                //check if the output buffer is full
                 if(outBuffer.get(h).getNumTuples()==Setting.blockFactor){
 
                     //check number of tuples in buffer
-                    if(blockInBucketS[h]<(M-1)){
-                        //copy the buffer to disk
-                        bucketS.get(h).add(blockInBucketS[h],outBuffer.get(h));
+                    if(blockCountS[h]<(M-1)){
+
+                        bucketsS.get(h).add(blockCountS[h],outBuffer.get(h));
                         numIO++;
-                        blockInBucketS[h]++;
+						blockCountS[h]++;
                         //initial a new empty buffer
                         outBuffer.set(h, new Block());
-                        outBuffer.get(h).insertTuple(tS);
 
                     } else {
                         System.out.printf("Relation S has exceeded memory size!");
                         return -1;
                     }
-                } else {
-                    outBuffer.get(h).insertTuple(tS);
                 }
+				outBuffer.get(h).insertTuple(tS);
             }
         }
 
+		blockSum=0;
         //load the remain part in buffer to disk
         for(int i=0;i<(M-1);i++){
             //if the buffer for this bucket is not empty
             if(outBuffer.get(i).getNumTuples()!=0){
-                if(blockInBucketS[i]<(M-1)){
-                    bucketS.get(i).add(blockInBucketS[i],outBuffer.get(i));
+                if(blockCountS[i]<(M-1)){
+                    bucketsS.get(i).add(blockCountS[i],outBuffer.get(i));
                     numIO++;
-                    blockInBucketS[i]++;
+					blockCountS[i]++;
+					blockSum += blockCountS[i];
                 }else{
                     System.out.printf("Relation S has exceeded memory size!");
                     return -1;
                 }
             }
         }
+		System.out.printf("Relation relS, Number of blocks after hash: %d\n",blockSum);
 
 
         //Join Phase --------------------------------------------------------------------
-        int BucketIdx=0;
+        int bucketIdx=0;
         RelationWriter RSWriter=relRS.getRelationWriter();
         Block RSBlock = new Block();
 
         //read in pairs of bucket Ri, Si
-        while (BucketIdx<(M-1)){
+        while (bucketIdx<(M-1)){
             //read in blocks in each bucket
-            numIO+=blockInBucketS[BucketIdx];
+			ArrayList<Block> BufferS = bucketsS.get(bucketIdx);
+            numIO+=blockCountS[bucketIdx];
 
-            for (int idxOfR=0;idxOfR<blockInBucketR[BucketIdx];idxOfR++){
+            for (int idxOfR=0;idxOfR<blockCountR[bucketIdx];idxOfR++){
 
                 //for each block in R search for matches and join them
-                Block BufferR = bucketR.get(BucketIdx).get(idxOfR);
+                Block BufferR = bucketsR.get(bucketIdx).get(idxOfR);
                 numIO++;
+
+				//for each tuple in bucketsR, prob with tuples in the corresponding bucket in bucketsS
                 for (Tuple tupleR:BufferR.tupleLst){
-                    for (int idxOfS = 0 ; idxOfS< blockInBucketS[BucketIdx];idxOfS++){
-                        for (Tuple tupleS:bucketS.get(BucketIdx).get(idxOfS).tupleLst){
+
+
+                    for (int idxOfS = 0 ; idxOfS< blockCountS[bucketIdx];idxOfS++){
+
+                        for (Tuple tupleS:BufferS.get(idxOfS).tupleLst){
+
                             if (tupleS.key==tupleR.key){
                                 JointTuple jTuple = new JointTuple(tupleR,tupleS);
+
+								//if RSBlock is full write it back to disk
                                 if (RSBlock.getNumTuples()==Setting.blockFactor){
                                     RSWriter.writeBlock(RSBlock);
                                     RSBlock = new Block();
-                                    RSBlock.insertTuple(jTuple);
-                                }else{
-									RSBlock.insertTuple(jTuple);
-								}
+                                }
+
+								RSBlock.insertTuple(jTuple);
                             }
                         }
                     }
                 }
             }
-            BucketIdx++;
+            bucketIdx++;
         }
         if (RSBlock.getNumTuples()!=0) {
             RSWriter.writeBlock(RSBlock);
 
         }
-		
+
 		return numIO;
 	}
-	
+
 	/**
 	 * Join relations relR and relS using Setting.memorySize buffers of memory to produce the result relation relRS
 	 * @param relS is one of the relation in the join
@@ -623,29 +632,26 @@ public class Algorithms {
 	public static void testCases(){
 		Algorithms algo = new Algorithms();
 		Relation relR = new Relation("RelR");
-		int numTuplesR = relR.populateRelationFromFile("RelR.txt");
-		System.out.println("Relation RelR contains "+numTuplesR+" tuples.");
-		
+		relR.printRelation(false,false);
+
 		Relation relS = new Relation("RelS");
-		int numTuplesS = relS.populateRelationFromFile("RelS.txt");
-		System.out.println("Relation RelS contains "+numTuplesS+" tuples.");
-		
+		relS.printRelation(false,false);
+
 		Relation relRS = new Relation("RelRS");
-		
+
 		/*Test Merge Sort*/
-		
+
 		/*Test Refined Sort-Merge Join*/
 		System.out.println("--------Refined Sort-Merge Join--------");
 		algo.refinedSortMergeJoinRelations(relR, relS, relRS);
 		
 		/*Test Hash Join*/
 		//Yi Chang
-/*      System.out.printf("----------Hash Join---------\n");
-		int numIOHash = Algorithms.hashJoinRelations(relR,relS,relRS);
-        relRS.printRelation(false, false);
-        relR.printRelation(false, false);
-        relS.printRelation(false, false);
-        System.out.printf("Number of IO: %d",numIOHash);*/
+//      	System.out.printf("----------Hash Join---------\n");
+//		int numIOHash = algo.hashJoinRelations(relR,relS,relRS);
+//        relRS.printRelation(false, false);
+//        System.out.printf("Number of IO: %d",numIOHash);
+
 	}
 	
 	/**
