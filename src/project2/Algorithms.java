@@ -86,7 +86,6 @@ public class Algorithms {
 	 * Sort the relation using Setting.memorySize buffers of memory 
 	 * @param rel is the relation to be sorted. 
 	 * @return the number of IO cost (in terms of reading and writing blocks)
-	 * @throws Exception 
 	 */
 	public int mergeSortRelation(Relation rel){
 		int numIO=0;
@@ -176,7 +175,6 @@ public class Algorithms {
 		System.out.println("---------numIO----------");
 		System.out.println(numIO);
 		
-		//System.out.println("---------Printing relations----------");
 		outRel.printRelation(true, true);
 		
 		return numIO;
