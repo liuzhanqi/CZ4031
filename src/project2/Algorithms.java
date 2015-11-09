@@ -71,7 +71,7 @@ public class Algorithms {
 		final class InMemoryArrayList<T> extends ArrayList<T> {
 			  @Override
 			  public boolean add(T e) {
-			      if (this.size() < Setting.memorySize) {
+			      if (this.size() < Setting.memorySize - 1) {
 			          return super.add(e);
 			      }
 			      return false;
@@ -96,9 +96,7 @@ public class Algorithms {
 				return -1;
 			}
 		}
-		
-		System.out.println("Number of sorted sublists = " + sortedSublists.size());
-		
+			
 		//phase 2: merge sorted sublists
 		//pair the relation loader with block so that it is easier to get the next block
 		HashMap<Block,RelationLoader> inputBuffers = new HashMap<>();
@@ -110,9 +108,7 @@ public class Algorithms {
 			numIO += 1;
 			inputBuffers.put(blocks[0],listLoader);
 		}
-		
-		System.out.println("size of input buffers = " + inputBuffers.entrySet().size());
-		
+				
 		//merge blocks in input buffer to outRel
 		//use a priority queue to get the smallest tuple each time
 		final class TupleItem {
@@ -173,6 +169,9 @@ public class Algorithms {
 		
 		//write to remaining blocks in output buffer to outrel
 		outWriter.writeBlock(outputBuffer);
+		
+		System.out.println("---------numIO----------");
+		System.out.println(numIO);
 		
 		//System.out.println("---------Printing relations----------");
 		outRel.printRelation(true, true);
@@ -769,17 +768,15 @@ public class Algorithms {
 	public static void main(String[] arg){
 		//Algorithms.examples();
 		//Populate relations
-		Relation relR=new Relation("RelR");
-		int numTuplesR=relR.populateRelationFromFile("RelR.txt");
-		System.out.println("Relation RelR contains "+numTuplesR+" tuples.");
+//		Relation relR=new Relation("RelR");
+//		int numTuplesR=relR.populateRelationFromFile("RelR.txt");
+//		System.out.println("Relation RelR contains "+numTuplesR+" tuples.");
 		Relation relS=new Relation("RelS");
 		int numTuplesS=relS.populateRelationFromFile("RelS.txt");
-		System.out.println("Relation RelR contains "+numTuplesS+" tuples.");
-		Relation relRS=new Relation("RelRS");
+		//System.out.println("Relation RelR contains "+numTuplesS+" tuples.");
+//		Relation relRS=new Relation("RelRS");
 		
-		int numIO = refinedSortMergeJoinRelations(relR, relS, relRS);
-		System.out.println("---------numIO----------");
-		System.out.println(numIO);
+		int numIO = mergeSortRelation(relS);
 
 		//Yichang
 //		Algorithms.testCases();
