@@ -124,8 +124,6 @@ public class Algorithms {
 			}
 		}
 		
-		System.out.println("Number of sorted sublists = " + sortedSublists.size());
-		
 		//phase 2: merge sorted sublists
 		//pair the relation loader with block so that it is easier to get the next block
 		HashMap<Block,RelationLoader> inputBuffers = new HashMap<>();
@@ -137,8 +135,6 @@ public class Algorithms {
 			numIO += 1;
 			inputBuffers.put(blocks[0],listLoader);
 		}
-		
-		System.out.println("size of input buffers = " + inputBuffers.entrySet().size());
 		
 		//merge blocks in input buffer to outRel
 		//use a priority queue to get the smallest tuple each time
@@ -177,7 +173,11 @@ public class Algorithms {
 		//write to remaining blocks in output buffer to outrel
 		outWriter.writeBlock(outputBuffer);
 		
-		//System.out.println("---------Printing relations----------");
+		//print number of IO
+		System.out.println("Number of IO: " + numIO);
+		
+		//print relation outrel
+		System.out.println("------Printing relation outrel------");
 		outRel.printRelation(true, true);
 		
 		return numIO;
@@ -377,7 +377,14 @@ public class Algorithms {
             RSWriter.writeBlock(RSBlock);
 
         }
-
+        
+		//print number of IO
+		System.out.println("Number of IO: " + numIO);
+		
+		//print relation RS (join result)
+		System.out.println("------Printing relation RS------");
+		relRS.printRelation(true, true);
+        
 		return numIO;
 	}
 
@@ -631,27 +638,29 @@ public class Algorithms {
 	 */
 	public static void testCases(){
 		Algorithms algo = new Algorithms();
+		
 		Relation relR = new Relation("RelR");
+		relR.populateRelationFromFile("RelR.txt");
 		relR.printRelation(false,false);
-
+		
 		Relation relS = new Relation("RelS");
+		relS.populateRelationFromFile("RelS.txt");
 		relS.printRelation(false,false);
-
+		
 		Relation relRS = new Relation("RelRS");
 
 		/*Test Merge Sort*/
-
+//		System.out.println("--------Merge Sort--------");
+//		algo.mergeSortRelation(relR);
+//		algo.mergeSortRelation(relS);
+		
+		/*Test Hash Join*/
+//		System.out.println("--------Hash Join--------");
+//		algo.hashJoinRelations(relR,relS,relRS);
+		
 		/*Test Refined Sort-Merge Join*/
 		System.out.println("--------Refined Sort-Merge Join--------");
 		algo.refinedSortMergeJoinRelations(relR, relS, relRS);
-		
-		/*Test Hash Join*/
-		//Yi Chang
-//      	System.out.printf("----------Hash Join---------\n");
-//		int numIOHash = algo.hashJoinRelations(relR,relS,relRS);
-//        relRS.printRelation(false, false);
-//        System.out.printf("Number of IO: %d",numIOHash);
-
 	}
 	
 	/**
