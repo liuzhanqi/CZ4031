@@ -86,7 +86,6 @@ public class Algorithms {
 	 * Sort the relation using Setting.memorySize buffers of memory 
 	 * @param rel is the relation to be sorted. 
 	 * @return the number of IO cost (in terms of reading and writing blocks)
-	 * @throws Exception 
 	 */
 	public int mergeSortRelation(Relation rel){
 		int numIO=0;
@@ -98,7 +97,7 @@ public class Algorithms {
 		final class InMemoryArrayList<T> extends ArrayList<T> {
 			  @Override
 			  public boolean add(T e) {
-			      if (this.size() < Setting.memorySize) {
+			      if (this.size() < Setting.memorySize - 1) {
 			          return super.add(e);
 			      }
 			      return false;
@@ -123,7 +122,7 @@ public class Algorithms {
 				return -1;
 			}
 		}
-		
+
 		//phase 2: merge sorted sublists
 		//pair the relation loader with block so that it is easier to get the next block
 		HashMap<Block,RelationLoader> inputBuffers = new HashMap<>();
@@ -135,7 +134,7 @@ public class Algorithms {
 			numIO += 1;
 			inputBuffers.put(blocks[0],listLoader);
 		}
-		
+
 		//merge blocks in input buffer to outRel
 		//use a priority queue to get the smallest tuple each time
 		PriorityQueue<TupleItem> tupleQueue = new PriorityQueue<TupleItem>(
